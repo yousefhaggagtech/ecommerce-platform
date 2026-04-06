@@ -7,8 +7,6 @@ import xssClean from "xss-clean";
 import cookieParser from "cookie-parser";
 import cors from "cors";
 import globalErrorHandler from "@/controllers/errorController.js";
-import { catchError } from "@/utils/catchError.js";
-import AppError from "@/utils/AppError.js";
 import corsOptions from "@/config/corsOptions.js";
 
 
@@ -122,9 +120,9 @@ app.use(cors(corsOptions));
  * Example:
  * - Frontend hosted on `http://example.com` can access API on `http://api.example.com`.
  */
-app.all("*", catchError(async (req: Request, _res: Response, next: NextFunction) => {
+app.use((req: Request, _res: Response, next: NextFunction) => {
   next(new AppError(`Can't find ${req.originalUrl} on this server!`, 404));
-}));
+});
 
 app.use(globalErrorHandler);
 export default app;

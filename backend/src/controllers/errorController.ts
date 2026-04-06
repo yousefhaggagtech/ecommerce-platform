@@ -2,28 +2,25 @@ import type { NextFunction, Request, Response } from "express";
 import AppError from "@/utils/AppError.js";
 
 /**
- * Handles MongoDB CastErrors for invalid IDs or paths.
- * @param err - The MongoDB CastError object
+ * Handles MongoDB CastErrors (e.g., passing a string that isn't a valid ObjectId)
  */
 const handleCastErrorDB = (err: any): AppError => {
-  const message = `Invalid  ${err.path}: ${err.value}.`;
-  //create new instance of the AppError class (object) and passing the message and status code
+  const message = `Invalid ${err.path}: ${err.value}.`;
   return new AppError(message, 400);
 };
 
 /**
- * Handles duplicate fields in MongoDB.
- * @param err - The MongoDB Duplicate Key Error object
+ * Handles MongoDB Duplicate Key Errors (e.g., trying to register an existing email)
  */
 const handleDuplicateFieldsDB = (err: any): AppError => {
+  // Extract the duplicate value from the error object
   const value = Object.values(err.keyValue).join(", ");
   const message = `Duplicate field value: ${value}. Please use another value!`;
   return new AppError(message, 400);
 };
 
 /**
- * Handles validation errors from Mongoose.
- * @param err - The Mongoose ValidationError object
+ * Handles Mongoose Validation Errors (e.g., required fields or minLength violations)
  */
 const handleValidationErrorDB = (err: any): AppError => {
   const errors = Object.values(err.errors).map((el: any) => el.message);
@@ -32,11 +29,21 @@ const handleValidationErrorDB = (err: any): AppError => {
 };
 
 /**
- * Handles errors during development.
- * @param err - The error object
- * @param res - The response object
+ * Handles JWT Authentication Errors (Invalid Token)
  */
-const sendErrorDev = (err: AppError, res: Response) => {
+const handleJWTError = () => 
+  new AppError('Invalid token. Please log in again!', 401);
+
+/**
+ * Handles JWT Expiration Errors
+ */
+const handleJWTExpiredError = () => 
+  new AppError('Your token has expired! Please log in again.', 401);
+
+/**
+ * Sends detailed error information during development
+ */
+const sendErrorDev = (err: any, res: Response) => {
   res.status(err.statusCode).json({
     status: err.status,
     error: err,
@@ -46,38 +53,56 @@ const sendErrorDev = (err: AppError, res: Response) => {
 };
 
 /**
- * Handles errors during production.
- * @param err - The error object
- * @param res - The response object
+ * Sends clean, user-friendly error messages during production
  */
 const sendErrorProd = (err: AppError, res: Response) => {
+  // A) Operational, trusted error: send message to client
   if (err.isOperational) {
     res.status(err.statusCode).json({
       status: err.status,
       message: err.message,
     });
-  } else {
+  } 
+  // B) Programming or unknown error: don't leak details to the client
+  else {
+    // 1) Log error to console for the developer
     console.error("ERROR 💥", err);
+
+    // 2) Send a generic message
     res.status(500).json({
       status: "error",
-      message: "Something went wrong!",
+      message: "Something went very wrong!",
     });
   }
 };
 
-const globalErrorHandler = (err: any, _req: Request, res: Response, _next: NextFunction) => {
-  /*sets the statusCode and status properties of the error object to default values if they're not already set. 
-  This ensures that every error has a status code and a status message. */
+/**
+ * Main Global Error Handling Middleware
+ */
+const globalErrorHandler = (
+  err: any, 
+  _req: Request, 
+  res: Response, 
+  _next: NextFunction
+) => {
+  // Set default status code and status if not present
   err.statusCode = err.statusCode || 500;
   err.status = err.status || "error";
+
   if (process.env.NODE_ENV === "development") {
     sendErrorDev(err, res);
-  } else if (process.env.NODE_ENV === "production") {
-    let error = { ...err };
-    if (err.name === "CastError") error = handleCastErrorDB(err);
-    if (err.code === 11000) error = handleDuplicateFieldsDB(err);
-    if (err._message === "Validation failed") error = handleValidationErrorDB(err);
+  } else {
+    // 1. Create a copy of the error and ensure message/name are preserved
+    let error = { ...err, message: err.message, name: err.name };
 
+    // 2. Identify and transform specific library errors into AppErrors
+    if (error.name === "CastError") error = handleCastErrorDB(error);
+    if (error.code === 11000) error = handleDuplicateFieldsDB(error);
+    if (error.name === "ValidationError") error = handleValidationErrorDB(error);
+    if (error.name === 'JsonWebTokenError') error = handleJWTError();
+    if (error.name === 'TokenExpiredError') error = handleJWTExpiredError();
+
+    // 3. Send the formatted error
     sendErrorProd(error as AppError, res);
   }
 };

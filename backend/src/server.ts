@@ -1,21 +1,24 @@
-import mongoose from "mongoose";
 import dotenv from "dotenv";
-import app from "@/app.js";
-import 'module-alias/register';
-dotenv.config();
+import path from "path";
+dotenv.config({ path: path.resolve(process.cwd(), ".env") }); 
 
+import 'module-alias/register';
+import mongoose from "mongoose";
+import app from "@/app.js";
 const DB_URI = process.env.DATABASE_URI || "";
+if (!DB_URI.startsWith("mongodb")) {
+    console.error("CRITICAL: DATABASE_URI is missing or incorrect in .env file!");
+}
 mongoose
   .connect(DB_URI)
-  .then(() => console.log("MongoDB Connected"))
-  .catch((err) => console.log(err));
-const port = process.env.PORT || 3000;
-const server = app.listen(port);
-
-process.on("unhandledRejection", (err: any) => {
-  console.log("UNHANDLED REJECTION! 💥 Shutting down...");
-  console.log(err.name, err.message);
-  server.close(() => {
-    process.exit(1);
+  .then(() => console.log("MongoDB Connected Successfully!"))
+  .catch((err) => {
+    console.log("Mongoose Connection Error: ❌");
+    console.log(err);
   });
+
+const port = process.env.PORT || 3000;
+const server = app.listen(port, () => {
+    console.log(`Server running on port ${port}`);
 });
+
