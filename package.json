@@ -5,6 +5,7 @@
     "husky": "^8.0.0"
   },
   "scripts": {
-    "prepare": "husky install"
+    "prepare": "husky install",
+    "test": "echo \"No tests yet\""
   }
 }
