@@ -8,7 +8,7 @@ import cookieParser from "cookie-parser";
 import cors from "cors";
 import globalErrorHandler from "@/controllers/errorController.js";
 import corsOptions from "@/config/corsOptions.js";
-
+import AppError from "@/utils/AppError.js";
 
 
 const app = express();
