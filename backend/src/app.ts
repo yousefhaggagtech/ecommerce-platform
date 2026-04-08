@@ -2,14 +2,13 @@ import express from "express";
 import type { NextFunction, Request, Response } from "express";
 import helmet from "helmet";
 import morgan from "morgan";
-import mongoSanitize from "express-mongo-sanitize";
-import xssClean from "xss-clean";
 import cookieParser from "cookie-parser";
 import cors from "cors";
+import sanitizer from "./middleware/sanitizer.js";
 import globalErrorHandler from "@/controllers/errorController.js";
 import corsOptions from "@/config/corsOptions.js";
 import AppError from "@/utils/AppError.js";
-
+import authRoutes from "@/routes/authRouter.js";
 
 const app = express();
 
@@ -70,18 +69,7 @@ app.use(express.urlencoded({ extended: false }));
  * - Accessible in code: `req.body.name === "John"`
  */
 
-app.use(cookieParser());
-/**
- * Middleware: cookieParser
- * Purpose: Parses cookies from incoming requests.
- * Use Case:
- * - Essential for authentication and session management.
- * Example:
- * - Incoming header: `Cookie: userId=12345`
- * - Accessible in code: `req.cookies.userId === "12345"`
- */
-
-app.use(mongoSanitize());
+app.use(sanitizer);
 /**{
   "username": { "$gt": "" },
   "password": "anyPassword"
@@ -97,15 +85,17 @@ This matches any user in the database because $gt bypasses the need for a specif
  * - Sanitized output: `{ }`
  */
 
-app.use(xssClean());
+
+
+app.use(cookieParser());
 /**
- * Middleware: xss-clean
- * Purpose: Protects against Cross-Site Scripting (XSS) attacks.
- * How It Works:
- * - Sanitizes input to prevent injection of malicious scripts.
+ * Middleware: cookieParser
+ * Purpose: Parses cookies from incoming requests.
+ * Use Case:
+ * - Essential for authentication and session management.
  * Example:
- * - Malicious input: `<script>alert('Hacked!')</script>`
- * - Sanitized output: `alert('Hacked!')`
+ * - Incoming header: `Cookie: userId=12345`
+ * - Accessible in code: `req.cookies.userId === "12345"`
  */
 //@ts-ignore
 app.use(cors(corsOptions));
@@ -120,6 +110,11 @@ app.use(cors(corsOptions));
  * Example:
  * - Frontend hosted on `http://example.com` can access API on `http://api.example.com`.
  */
+app.use("/api/auth", authRoutes);
+/**
+  * Route Handling
+ */
+
 app.use((req: Request, _res: Response, next: NextFunction) => {
   next(new AppError(`Can't find ${req.originalUrl} on this server!`, 404));
 });
