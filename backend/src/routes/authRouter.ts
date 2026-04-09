@@ -15,5 +15,4 @@ router.post("/login", login);
 router.post("/refresh", refresh);
 router.post("/logout", logout);
 router.get("/me", protect, getMe);
-console.log("Auth routes file loaded");
 export default router;

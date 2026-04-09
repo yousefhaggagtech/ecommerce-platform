@@ -9,7 +9,7 @@ import globalErrorHandler from "@/controllers/errorController.js";
 import corsOptions from "@/config/corsOptions.js";
 import AppError from "@/utils/AppError.js";
 import authRoutes from "@/routes/authRouter.js";
-
+import productRoutes from "@/routes/productRouter.js";
 const app = express();
 
 /**
@@ -111,6 +111,8 @@ app.use(cors(corsOptions));
  * - Frontend hosted on `http://example.com` can access API on `http://api.example.com`.
  */
 app.use("/api/auth", authRoutes);
+
+app.use("/api/products", productRoutes);
 /**
   * Route Handling
  */
