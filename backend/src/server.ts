@@ -1,10 +1,15 @@
 import dotenv from "dotenv";
 import path from "path";
+
+// Load environment variables BEFORE anything else
 dotenv.config({ path: path.resolve(process.cwd(), ".env") }); 
 
 import 'module-alias/register';
+
+// Now it's safe to use dynamic imports with module aliases
 import mongoose from "mongoose";
-import app from "@/app.js";
+import app from "./app.js";
+
 const DB_URI = process.env.DATABASE_URI || "";
 if (!DB_URI.startsWith("mongodb")) {
     console.error("CRITICAL: DATABASE_URI is missing or incorrect in .env file!");

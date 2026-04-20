@@ -11,6 +11,7 @@ import AppError from "@/utils/AppError.js";
 import authRoutes from "@/routes/authRouter.js";
 import productRoutes from "@/routes/productRouter.js";
 import orderRoutes from "@/routes/orderRouter.js";
+import uploadRoutes from "@/routes/uploadRouter.js";
 const app = express();
 
 /**
@@ -114,6 +115,7 @@ app.use(cors(corsOptions));
 app.use("/api/auth", authRoutes);
 app.use("/api/products", productRoutes);
 app.use("/api/orders", orderRoutes);
+app.use("/api/upload", uploadRoutes);
 /**
   * Route Handling
  */
