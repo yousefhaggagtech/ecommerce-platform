@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, use } from "react";
 import Image from "next/image";
 import { useProduct } from "@/application/hooks/useProducts";
 import { useCartStore } from "@/application/store/cartStore";
@@ -11,13 +11,15 @@ import { Badge } from "@/components/ui/badge";
 // ─── Props ────────────────────────────────────────────────────────────────────
 
 interface ProductDetailPageProps {
-  params: { id: string };
+  params: Promise<{ id: string }>; 
 }
 
 // ─── Product Detail Page ──────────────────────────────────────────────────────
 
 export default function ProductDetailPage({ params }: ProductDetailPageProps) {
-  const { data: product, isLoading, isError } = useProduct(params.id);
+  const { id } = use(params);
+  
+  const { data: product, isLoading, isError } = useProduct(id);
   const addItem = useCartStore((state) => state.addItem);
 
   const [selectedSize, setSelectedSize]     = useState<string | null>(null);
@@ -64,7 +66,6 @@ export default function ProductDetailPage({ params }: ProductDetailPageProps) {
       quantity:  1,
     });
 
-    // Show feedback for 2 seconds
     setAddedToCart(true);
     setTimeout(() => setAddedToCart(false), 2000);
   };
@@ -115,7 +116,6 @@ export default function ProductDetailPage({ params }: ProductDetailPageProps) {
 
         {/* ── Info ──────────────────────────────────────────────────────── */}
         <div className="flex flex-col gap-6">
-          {/* Category + Name */}
           <div>
             <p className="text-xs uppercase tracking-widest text-zinc-500">
               {product.category} · {product.gender}
@@ -125,7 +125,6 @@ export default function ProductDetailPage({ params }: ProductDetailPageProps) {
             </h1>
           </div>
 
-          {/* Price */}
           <div className="flex items-center gap-3">
             <span className="text-2xl font-bold text-zinc-900">
               LE {product.price.toLocaleString()}
@@ -136,20 +135,18 @@ export default function ProductDetailPage({ params }: ProductDetailPageProps) {
               </span>
             )}
             {hasDiscount && (
-              <Badge className="bg-red-500 text-white hover:bg-red-500">
+              <Badge className="bg-red-500 text-white hover:bg-red-500 border-none">
                 Sale
               </Badge>
             )}
           </div>
 
-          {/* Description */}
           {product.description && (
             <p className="text-sm leading-relaxed text-zinc-600">
               {product.description}
             </p>
           )}
 
-          {/* Size Selector */}
           <div>
             <div className="mb-2 flex items-center justify-between">
               <p className="text-sm font-medium text-zinc-900">Size</p>
@@ -185,7 +182,6 @@ export default function ProductDetailPage({ params }: ProductDetailPageProps) {
             </div>
           </div>
 
-          {/* Add to Cart */}
           <Button
             size="lg"
             className="w-full"
