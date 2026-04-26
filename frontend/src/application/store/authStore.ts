@@ -6,99 +6,104 @@ import { authApi } from "@/infrastructure/api/authApi";
 // ─── State Interface ──────────────────────────────────────────────────────────
 
 interface AuthState {
-  user: IUser | null;
-  accessToken: string | null;
-  refreshToken: string | null;
+  user:            IUser | null;
   isAuthenticated: boolean;
+  _hasHydrated:    boolean;
 
   // Actions
-  login: (email: string, password: string) => Promise<void>;
-  register: (name: string, email: string, password: string) => Promise<void>;
-  logout: () => Promise<void>;
-  setTokens: (accessToken: string, refreshToken: string) => void;
-  clearAuth: () => void;
+  login:          (email: string, password: string) => Promise<void>;
+  register:       (name: string, email: string, password: string) => Promise<void>;
+  logout:         () => Promise<void>;
+  clearAuth:      () => void;
+  setAuthUser:     (user: IUser) => void;
+  setHasHydrated: (state: boolean) => void;
 }
 
 // ─── Auth Store ───────────────────────────────────────────────────────────────
+// Tokens are stored in httpOnly cookies by the backend — not here
+// Only user data and isAuthenticated are persisted for UI purposes
 
 export const useAuthStore = create<AuthState>()(
   persist(
     (set, get) => ({
-      user: null,
-      accessToken: null,
-      refreshToken: null,
+      user:            null,
       isAuthenticated: false,
+      _hasHydrated:    false,
 
-      // ── Login ───────────────────────────────────────────────────────────────
+      // ── Login ──────────────────────────────────────────────────────────────
+      // Backend sets accessToken + refreshToken as httpOnly cookies
       login: async (email, password) => {
         const response = await authApi.login({ email, password });
 
-        // Persist tokens in localStorage for axios interceptor
-        localStorage.setItem("accessToken", response.accessToken);
-        localStorage.setItem("refreshToken", response.refreshToken);
-
         set({
-          user: response.user,
-          accessToken: response.accessToken,
-          refreshToken: response.refreshToken,
+          user:            response.user,
           isAuthenticated: true,
         });
       },
 
-      // ── Register ────────────────────────────────────────────────────────────
+      // ── Register ───────────────────────────────────────────────────────────
       register: async (name, email, password) => {
         const response = await authApi.register({ name, email, password });
 
-        localStorage.setItem("accessToken", response.accessToken);
-        localStorage.setItem("refreshToken", response.refreshToken);
-
         set({
-          user: response.user,
-          accessToken: response.accessToken,
-          refreshToken: response.refreshToken,
+          user:            response.user,
           isAuthenticated: true,
         });
       },
 
-      // ── Logout ──────────────────────────────────────────────────────────────
+      // ── Logout ─────────────────────────────────────────────────────────────
+      // Backend clears both cookies — we just clear local UI state
       logout: async () => {
-        const { refreshToken } = get();
-
         try {
-          if (refreshToken) {
-            await authApi.logout(refreshToken);
-          }
+          await authApi.logout();
         } finally {
-          // Always clear local state even if API call fails
           get().clearAuth();
         }
       },
 
-      // ── Set Tokens (called by axios interceptor after refresh) ───────────────
-      setTokens: (accessToken, refreshToken) => {
-        localStorage.setItem("accessToken", accessToken);
-        localStorage.setItem("refreshToken", refreshToken);
-        set({ accessToken, refreshToken });
-      },
-
-      // ── Clear Auth ───────────────────────────────────────────────────────────
+      // ── Clear Auth ──────────────────────────────────────────────────────────
+      // Called on logout or when refresh token fails in the axios interceptor
       clearAuth: () => {
-        localStorage.removeItem("accessToken");
-        localStorage.removeItem("refreshToken");
         set({
-          user: null,
-          accessToken: null,
-          refreshToken: null,
+          user:            null,
           isAuthenticated: false,
         });
       },
+
+      // ── Set Auth User (used on hydration to validate server session)
+      setAuthUser: (user) => {
+        set({ user, isAuthenticated: true });
+      },
+
+      // ── Set Hydrated ────────────────────────────────────────────────────────
+      // Called by Zustand's onRehydrateStorage after reading from localStorage
+      setHasHydrated: (state) => {
+        set({ _hasHydrated: state });
+      },
     }),
     {
-      name: "auth-storage", // localStorage key
+      name: "auth-storage",
+
+      // Trigger setHasHydrated when Zustand finishes reading from localStorage
+      onRehydrateStorage: () => (state) => {
+        state?.setHasHydrated(true);
+
+        // Validate server session on hydrate: call /auth/me to ensure tokens/cookies are valid
+        (async () => {
+          try {
+            const user = await authApi.getMe();
+            // Update store only if getMe succeeded
+            state?.setAuthUser(user);
+          } catch {
+            // If validation fails, clear local UI state
+            state?.clearAuth();
+          }
+        })();
+      },
+
+      // Only persist user data for UI — never persist tokens
       partialize: (state) => ({
-        user: state.user,
-        accessToken: state.accessToken,
-        refreshToken: state.refreshToken,
+        user:            state.user,
         isAuthenticated: state.isAuthenticated,
       }),
     }

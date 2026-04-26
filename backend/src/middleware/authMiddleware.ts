@@ -9,25 +9,19 @@ interface JwtPayload {
   role: string;
 }
 
-// ─── Protect ─────────────────────────────────────────────────────────────────
-// Verifies the Access Token and attaches the user to req.user
+// ─── Protect ──────────────────────────────────────────────────────────────────
+// Reads access token from httpOnly cookie — not from Authorization header
 
 export const protect = catchError(
   async (req: Request, res: Response, next: NextFunction) => {
-    // 1. Extract token from Authorization header
-    let token: string | undefined;
-    if (
-      req.headers.authorization &&
-      req.headers.authorization.startsWith("Bearer")
-    ) {
-      token = req.headers.authorization.split(" ")[1];
-    }
+    // 1. Read token from cookie
+    const token = req.cookies?.accessToken;
 
     if (!token) {
       return next(new AppError("You are not logged in", 401));
     }
 
-    // 2. Verify access token signature and expiry
+    // 2. Verify token
     let decoded: JwtPayload;
     try {
       decoded = jwt.verify(
@@ -38,20 +32,19 @@ export const protect = catchError(
       return next(new AppError("Invalid or expired access token", 401));
     }
 
-    // 3. Confirm the user still exists in the database
+    // 3. Confirm user still exists
     const user = await User.findById(decoded.id);
     if (!user) {
       return next(new AppError("User no longer exists", 401));
     }
 
-    // 4. Attach user to request for downstream handlers
+    // 4. Attach user to request
     (req as any).user = user;
     next();
   }
 );
 
-// ─── Restrict To ─────────────────────────────────────────────────────────────
-// Restricts a route to specific roles — must be used after protect
+// ─── Restrict To ──────────────────────────────────────────────────────────────
 
 export const restrictTo = (...roles: string[]) => {
   return (req: Request, res: Response, next: NextFunction) => {

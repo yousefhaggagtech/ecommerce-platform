@@ -5,7 +5,23 @@ import User from "@/models/userModel.js";
 import AppError from "@/utils/AppError.js";
 import { catchError } from "@/utils/catchError.js";
 
-// ─── Token Generators ────────────────────────────────────────────────────────
+// ─── Cookie Config ────────────────────────────────────────────────────────────
+
+const ACCESS_COOKIE_OPTIONS = {
+  httpOnly: true,                                    // JS cannot access this cookie
+  secure:   process.env.NODE_ENV === "production",   // HTTPS only in production
+  sameSite: "strict" as const,                       // CSRF protection
+  maxAge:   15 * 60 * 1000,                          // 15 minutes in ms
+};
+
+const REFRESH_COOKIE_OPTIONS = {
+  httpOnly: true,
+  secure:   process.env.NODE_ENV === "production",
+  sameSite: "strict" as const,
+  maxAge:   14 * 24 * 60 * 60 * 1000,               // 14 days in ms
+};
+
+// ─── Token Generators ─────────────────────────────────────────────────────────
 
 const signAccessToken = (id: string, role: string): string => {
   return jwt.sign(
@@ -23,42 +39,44 @@ const signRefreshToken = (id: string): string => {
   );
 };
 
-// ─── Helper: build and send token response ───────────────────────────────────
+// ─── Helper: set tokens as httpOnly cookies ───────────────────────────────────
 
 const sendTokens = async (
   user: any,
   statusCode: number,
   res: Response
 ): Promise<void> => {
-  const accessToken = signAccessToken(user._id, user.role);
+  const accessToken  = signAccessToken(user._id, user.role);
   const refreshToken = signRefreshToken(user._id);
 
-  // Store hashed refresh token — never store the raw value
+  // Store hashed refresh token in DB — never the raw value
   user.refreshToken = await bcrypt.hash(refreshToken, 10);
   await user.save({ validateBeforeSave: false });
 
+  // Set tokens as httpOnly cookies — JS cannot read these
+  res.cookie("accessToken",  accessToken,  ACCESS_COOKIE_OPTIONS);
+  res.cookie("refreshToken", refreshToken, REFRESH_COOKIE_OPTIONS);
+
+  // Return user data only — no tokens in response body
   res.status(statusCode).json({
     status: "success",
-    accessToken,
-    refreshToken,
     data: {
       user: {
-        id: user._id,
-        name: user.name,
+        id:    user._id,
+        name:  user.name,
         email: user.email,
-        role: user.role,
+        role:  user.role,
       },
     },
   });
 };
 
-// ─── Register ────────────────────────────────────────────────────────────────
+// ─── Register ─────────────────────────────────────────────────────────────────
 
 export const register = catchError(
   async (req: Request, res: Response, next: NextFunction) => {
     const { name, email, password } = req.body;
 
-    // Reject if email is already registered
     const existingUser = await User.findOne({ email });
     if (existingUser) {
       return next(new AppError("Email already exists", 409));
@@ -69,7 +87,7 @@ export const register = catchError(
   }
 );
 
-// ─── Login ───────────────────────────────────────────────────────────────────
+// ─── Login ────────────────────────────────────────────────────────────────────
 
 export const login = catchError(
   async (req: Request, res: Response, next: NextFunction) => {
@@ -79,10 +97,8 @@ export const login = catchError(
       return next(new AppError("Please provide email and password", 400));
     }
 
-    // Explicitly select password since it is excluded by default
     const user = await User.findOne({ email }).select("+password");
 
-    // Return the same error for wrong email or wrong password (BR-006)
     if (!user || !(await user.comparePassword(password))) {
       return next(new AppError("Invalid credentials", 401));
     }
@@ -91,17 +107,17 @@ export const login = catchError(
   }
 );
 
-// ─── Refresh Token ───────────────────────────────────────────────────────────
+// ─── Refresh Token ────────────────────────────────────────────────────────────
 
 export const refresh = catchError(
   async (req: Request, res: Response, next: NextFunction) => {
-    const { refreshToken } = req.body;
+    // Read refresh token from cookie — not from request body
+    const refreshToken = req.cookies?.refreshToken;
 
     if (!refreshToken) {
-      return next(new AppError("Refresh token is required", 400));
+      return next(new AppError("Refresh token is required", 401));
     }
 
-    // Verify token signature
     let decoded: any;
     try {
       decoded = jwt.verify(refreshToken, process.env.JWT_REFRESH_SECRET as string);
@@ -109,66 +125,64 @@ export const refresh = catchError(
       return next(new AppError("Invalid or expired refresh token", 403));
     }
 
-    // Find user and include the stored refresh token hash
     const user = await User.findById(decoded.id).select("+refreshToken");
     if (!user) {
       return next(new AppError("User not found", 403));
     }
 
-    // Validate submitted token against stored hash
     const isValid = await user.compareRefreshToken(refreshToken);
     if (!isValid) {
       return next(new AppError("Refresh token mismatch", 403));
     }
 
-    // Issue a new access token only — refresh token stays the same
-    const newAccessToken = signAccessToken(user.id, user.role);
+    // Issue new access token and set it as a cookie
+    const newAccessToken = signAccessToken(user._id, user.role);
+    res.cookie("accessToken", newAccessToken, ACCESS_COOKIE_OPTIONS);
 
-    res.status(200).json({
-      status: "success",
-      accessToken: newAccessToken,
-    });
+    res.status(200).json({ status: "success" });
   }
 );
 
-// ─── Logout ──────────────────────────────────────────────────────────────────
+// ─── Logout ───────────────────────────────────────────────────────────────────
 
 export const logout = catchError(
   async (req: Request, res: Response, next: NextFunction) => {
-    const { refreshToken } = req.body;
+    const refreshToken = req.cookies?.refreshToken;
+
+    // Clear cookies immediately regardless of token validity
+    res.clearCookie("accessToken",  { httpOnly: true, sameSite: "strict" });
+    res.clearCookie("refreshToken", { httpOnly: true, sameSite: "strict" });
 
     if (!refreshToken) {
-      return next(new AppError("Refresh token is required", 400));
-    }
-
-    // Silently succeed if token is invalid — logout should always work client-side
-    let decoded: any;
-    try {
-      decoded = jwt.verify(refreshToken, process.env.JWT_REFRESH_SECRET as string);
-    } catch {
       return res.status(204).send();
     }
 
-    const user = await User.findById(decoded.id).select("+refreshToken");
-    if (!user) return res.status(204).send();
-
-    // Invalidate the refresh token
-    user.refreshToken = null;
-    await user.save({ validateBeforeSave: false });
+    // Silently try to invalidate the refresh token in DB
+    try {
+      const decoded: any = jwt.verify(
+        refreshToken,
+        process.env.JWT_REFRESH_SECRET as string
+      );
+      const user = await User.findById(decoded.id).select("+refreshToken");
+      if (user) {
+        user.refreshToken = null;
+        await user.save({ validateBeforeSave: false });
+      }
+    } catch {
+      // Token already invalid — still return success
+    }
 
     res.status(204).send();
   }
 );
 
-// ─── Get Me ──────────────────────────────────────────────────────────────────
+// ─── Get Me ───────────────────────────────────────────────────────────────────
 
 export const getMe = catchError(
   async (req: Request, res: Response, next: NextFunction) => {
     res.status(200).json({
       status: "success",
-      data: {
-        user: (req as any).user,
-      },
+      data: { user: (req as any).user },
     });
   }
 );
